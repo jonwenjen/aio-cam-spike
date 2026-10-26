@@ -56,9 +56,14 @@
 <input id="f-any" type="file">
 <img id="pv" class="pv" alt="">
 <pre id="imp-last">（尚未匯入）</pre>
-<p class="hint">處理完成後，下面兩個按鈕會變可按。請<b>兩個都存到照片</b>，再到照片 App 並排比較：HDR 版的高光是否像原圖一樣「發亮」、SDR 版是否較暗平。兩張都套了同樣的暖色調和左上角字樣。</p>
-<div class="row"><button id="b-save-hdr" disabled>存 HDR 版</button><button id="b-save-sdr" disabled class="sec">存 SDR 版</button></div>
-<div class="row"><button class="ans" data-q="hdrSaved" data-a="HDR版會發亮，SDR版不會">HDR 版會發亮</button><button class="ans" data-q="hdrSaved" data-a="兩張一樣">兩張一樣</button></div>
+<h2>3b. HDR 保留：A / B 兩種做法比對</h2>
+<p class="hint">選一張<b>相機「最相容」格式拍的 JPEG</b>（或上次那張 IMG_0037.jpeg）。處理完：<br>
+① 按「<b>全部 AirDrop 到 Mac</b>」→ 選 Mac mini（原圖 + B + A + SDR 四張，我在 Mac 上用 Apple 自己的解碼器量化 HDR 亮度）。<br>
+② 再把 <b>B 版</b>存到照片，和原圖並排看是否一樣「發亮」。</p>
+<button id="b-airdrop" disabled>全部 AirDrop 到 Mac（4 張）</button>
+<div class="row"><button id="b-save-hdrb" disabled>存 HDR-B 版</button><button id="b-save-hdr" disabled class="sec">存 HDR-A 版</button><button id="b-save-sdr" disabled class="sec">存 SDR</button></div>
+<div class="row"><button class="ans" data-q="origGlows" data-a="原圖在照片App會發亮">原圖會發亮</button><button class="ans" data-q="origGlows" data-a="原圖也不發亮">原圖也不發亮</button></div>
+<div class="row"><button class="ans" data-q="hdrB" data-a="B版和原圖一樣發亮">B 版跟原圖一樣亮</button><button class="ans" data-q="hdrB" data-a="B版不發亮">B 版不發亮</button></div>
 <div class="row"><button class="ans" data-q="hdrPreview" data-a="上方預覽圖有發亮">上方預覽有發亮</button><button class="ans" data-q="hdrPreview" data-a="上方預覽圖不發亮">預覽不發亮</button></div>
 
 <h2>4. 即時相機：手動控制與 12MP 流暢度</h2>
@@ -282,10 +287,12 @@ async function analyze(file, src) {
       const t1 = now(); const jb = await toBlob(c, 'image/jpeg', 0.92); const ju = await bytesOf(jb);
       r.process = { drawMs: Math.round(t1 - t0), encMs: Math.round(now() - t1), outKB: Math.round(jb.size / 1024) };
       try { r.process.icc = JPEGX.iccOf(ju, JPEGX.segments(ju).segs); } catch (e) {}
-      c.width = c.height = 0;
-      OUT.sdr = new File([jb], 'AIO_SDR.jpg', { type: 'image/jpeg' });
+      const stamp = new Date().toTimeString().slice(0, 8).replace(/:/g, '');
+      OUT.orig = file;
+      OUT.sdr = new File([jb], `AIO_${stamp}_SDR.jpg`, { type: 'image/jpeg' });
       if (A && A.gainMap) {
         const o = (r.exif && r.exif.orientation) || 1; let gmJpeg = null;
+        // Variant A: pixels rotated upright, gain map decoded + rotated + re-encoded (3-channel), Orientation=1.
         if (o !== 1) {
           const gmb = await createImageBitmap(new Blob([u.subarray(A.gainMap.start, A.gainMap.end)], { type: 'image/jpeg' }), { imageOrientation: 'none', colorSpaceConversion: 'none' });
           const sw = gmb.width, sh = gmb.height, rot = o >= 5; const gc = document.createElement('canvas'); gc.width = rot ? sh : sw; gc.height = rot ? sw : sh;
@@ -295,23 +302,38 @@ async function analyze(file, src) {
         const t2 = now(); const out = JPEGX.remux(u, ju, { orientation: 1, keepICCFrom: 'processed', gainMapJpeg: gmJpeg });
         const chk = JPEGX.analyze(out);
         r.process.remux = { ms: Math.round(now() - t2), kb: Math.round(out.length / 1024), gainMap: !!chk.gainMap, gmDims: chk.gainMap && chk.gainMap.dims, primary: chk.primarySOF, icc: chk.icc && chk.icc.desc, mpf: chk.mpf };
-        OUT.hdr = new File([out], 'AIO_HDR.jpg', { type: 'image/jpeg' });
+        OUT.hdrA = new File([out], `AIO_${stamp}_HDR_A.jpg`, { type: 'image/jpeg' });
+        // Variant B: write pixels back in the file's stored (sensor) orientation and keep the original
+        // EXIF Orientation, so the original gain map is copied byte-for-byte (never decoded/re-encoded).
+        if (o !== 1 && A.primarySOF) {
+          const inv = { 6: 8, 8: 6 }[o] || o; const sc = document.createElement('canvas'); sc.width = A.primarySOF.w; sc.height = A.primarySOF.h;
+          orientDraw(sc.getContext('2d', { colorSpace: 'display-p3' }), c, inv, sc.width, sc.height);
+          const jb2 = await bytesOf(await toBlob(sc, 'image/jpeg', 0.92)); sc.width = sc.height = 0;
+          const outB = JPEGX.remux(u, jb2, { orientation: null, keepICCFrom: 'processed' }); const chkB = JPEGX.analyze(outB);
+          r.process.remuxB = { kb: Math.round(outB.length / 1024), gainMap: !!chkB.gainMap, gmDims: chkB.gainMap && chkB.gainMap.dims, primary: chkB.primarySOF,
+            gmBytesIdentical: chkB.gainMap && chkB.gainMap.size === A.gainMap.size };
+          OUT.hdrB = new File([outB], `AIO_${stamp}_HDR_B.jpg`, { type: 'image/jpeg' });
+        }
       } else r.process.remux = 'no JPEG gain map in source';
+      c.width = c.height = 0;
     });
   } catch (e) { r.process = Object.assign(r.process || {}, { err: errStr(e) }); }
   bm.close?.(); upd();
-  $('#b-save-sdr').disabled = !OUT.sdr; $('#b-save-hdr').disabled = !OUT.hdr;
-  status(OUT.hdr ? '完成：請把 HDR 版和 SDR 版都存到照片比較' : '完成（這張沒有 JPEG 增益圖，只有 SDR 版）');
+  $('#b-save-sdr').disabled = !OUT.sdr; $('#b-save-hdr').disabled = !OUT.hdrA; $('#b-save-hdrb').disabled = !OUT.hdrB;
+  $('#b-airdrop').disabled = !OUT.sdr;
+  status(OUT.hdrA ? '完成：按「全部 AirDrop 到 Mac」，再把 B 版和 A 版存到照片比較' : '完成（這張沒有 JPEG 增益圖，只有 SDR 版）');
 }
 for (const [id, src] of [['#f-lib', 'library'], ['#f-any', 'files']])
   $(id).onchange = e => { const f = e.target.files[0]; if (f) analyze(f, src).catch(err => status('錯誤：' + errStr(err))); e.target.value = ''; };
-async function shareFile(f, tag) {
+async function shareFiles(files, tag) {
   R.saves = R.saves || {};
-  try { await navigator.share({ files: [f] }); R.saves[tag] = 'shared'; } catch (e) { R.saves[tag] = errStr(e); }
+  try { await navigator.share({ files }); R.saves[tag] = 'shared ' + files.length; } catch (e) { R.saves[tag] = errStr(e); }
   save();
 }
-$('#b-save-hdr').onclick = () => OUT.hdr && shareFile(OUT.hdr, 'hdr');
-$('#b-save-sdr').onclick = () => OUT.sdr && shareFile(OUT.sdr, 'sdr');
+$('#b-save-hdr').onclick = () => OUT.hdrA && shareFiles([OUT.hdrA], 'hdrA');
+$('#b-save-hdrb').onclick = () => OUT.hdrB && shareFiles([OUT.hdrB], 'hdrB');
+$('#b-save-sdr').onclick = () => OUT.sdr && shareFiles([OUT.sdr], 'sdr');
+$('#b-airdrop').onclick = () => shareFiles([OUT.orig, OUT.hdrB, OUT.hdrA, OUT.sdr].filter(Boolean), 'airdropAll');
 
 // ---------- 4. camera ----------
 const vid = $('#vid');
