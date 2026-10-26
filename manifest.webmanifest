@@ -1,0 +1,9 @@
+{
+  "name": "AIO Cam 實測 2",
+  "short_name": "AIO 實測2",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#111111",
+  "theme_color": "#111111"
+}

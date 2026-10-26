@@ -3,349 +3,385 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>AIO Cam 實測（拋棄式）</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AIO 實測2">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<title>AIO Cam 實測 第二輪（拋棄式）</title>
 <style>
   :root { color-scheme: light dark; --a:#2b6cb0; }
-  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 16px 16px 120px; max-width: 720px; }
+  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: calc(16px + env(safe-area-inset-top)) 16px 140px; max-width: 720px; }
   h1 { font-size: 20px; margin: 0 0 4px; }
-  h2 { font-size: 17px; margin: 28px 0 8px; border-top: 1px solid #8884; padding-top: 16px; }
-  p.hint { margin: 4px 0 10px; opacity: .75; font-size: 14px; }
+  h2 { font-size: 17px; margin: 28px 0 6px; border-top: 1px solid #8884; padding-top: 16px; }
+  p.hint { margin: 4px 0 10px; opacity: .78; font-size: 14px; }
   button, label.btn { display: block; width: 100%; box-sizing: border-box; min-height: 56px; margin: 8px 0;
     font-size: 17px; font-weight: 600; border: 0; border-radius: 14px; background: var(--a); color: #fff;
-    text-align: center; padding: 14px; cursor: pointer; }
+    text-align: center; padding: 14px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   button.sec { background: #8883; color: inherit; }
-  button:disabled { opacity: .5; }
+  button.ans { background: #2f855a; }
+  button:disabled { opacity: .45; }
   input[type=file] { display: none; }
   .row { display: flex; gap: 8px; } .row > * { flex: 1; }
-  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; background: #8881; padding: 10px; border-radius: 10px; max-height: 320px; overflow: auto; }
-  #log { font-size: 13px; }
-  video, canvas.pv { width: 100%; max-height: 240px; object-fit: contain; background: #000; border-radius: 10px; }
-  .ok { color: #2f855a; } .bad { color: #c53030; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; background: #8881; padding: 10px; border-radius: 10px; max-height: 300px; overflow: auto; }
+  video { width: 100%; max-height: 220px; object-fit: contain; background: #000; border-radius: 10px; }
+  canvas#hdr { width: 100%; height: 120px; border-radius: 10px; display: block; background: #000; }
+  img.pv { width: 100%; max-height: 260px; object-fit: contain; border-radius: 10px; background: #000; dynamic-range-limit: no-limit; }
+  .tag { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; background: #8882; }
   #status { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
-    background: #222e; color: #fff; font-size: 14px; backdrop-filter: blur(8px); }
+    background: #222e; color: #fff; font-size: 14px; backdrop-filter: blur(8px); z-index: 9; }
 </style>
 </head>
 <body>
-<h1>AIO Cam 網頁版實測</h1>
-<p class="hint">拋棄式測試頁，不上傳任何資料。依序按 1 → 4，最後按「複製結果」貼回對話。若頁面當掉重載，結果會保留並記下當掉的步驟。</p>
+<h1>AIO Cam 實測 第二輪</h1>
+<p class="hint">請用 <b>Safari</b> 開（正式版會是 Safari 主畫面 App）。依序按 1 → 5，最後「複製結果」貼回。頁面若當掉重載，結果保留並記錄當掉步驟。<br>
+另外：做完後請在 Safari「分享 → 加入主畫面」，從主畫面圖示打開，再做一次 <b>4 即時相機</b> 並再複製一次（主畫面 App 的儲存空間是分開的）。</p>
+<p><span class="tag" id="ctx"></span> <span class="tag">頁面 v2</span></p>
 
-<h2>1. 裝置與畫布極限</h2>
-<p class="hint">測 2D Canvas / WebGL 能處理多大的圖（12 / 16.7 / 24 / 48MP）。可能讓頁面重載，屬正常。</p>
-<button id="b-limits">開始測畫布極限</button>
+<h2>1. 色域（P3）與輸出格式</h2>
+<p class="hint">自動測，幾秒鐘。</p>
+<button id="b-color">開始測色域</button>
 
-<h2>2. 網頁相機</h2>
-<p class="hint">會請求相機權限。測最高解析度、可用鏡頭、即時套色調的 FPS。</p>
-<video id="vid" playsinline muted autoplay></video>
-<button id="b-cam">開始測相機</button>
+<h2>2. 120Hz、WebGPU、HDR 顯示</h2>
+<p class="hint">請先關閉「低耗電模式」。測完下方黑框會出現左右兩塊白色：<b>右邊是 HDR 白</b>。</p>
+<button id="b-gpu">開始測 GPU / 120Hz</button>
+<canvas id="hdr" width="880" height="240"></canvas>
+<div class="row"><button class="ans" data-q="hdrCanvas" data-a="右邊明顯比較亮">右邊明顯比較亮</button><button class="ans" data-q="hdrCanvas" data-a="一樣亮">一樣亮</button></div>
 
-<h2>3. 匯入照片（最重要）</h2>
-<p class="hint">請確認拍照時「相機」有定位權限。建議各測一次：一般照片、48MP 照片（若手機支援）、ProRAW（若支援）。</p>
-<label class="btn" for="f-lib">3a. 從「照片圖庫」選</label>
+<h2>3. 匯入照片：HDR 增益圖 / ProRAW 精度（最重要）</h2>
+<p class="hint">請各選一次：<b>(a) 一張有 HDR 的一般照片</b>（陽光、天空、燈光，在照片 App 會「發亮」的那種）、<b>(b) 48MP ProRAW</b>。若相簿是 HEIC，再從「檔案」選一張 HEIC 原檔。</p>
+<label class="btn" for="f-lib">從「照片圖庫」選</label>
 <input id="f-lib" type="file" accept="image/*">
-<label class="btn" for="f-cap">3b. 用原生相機現拍</label>
-<input id="f-cap" type="file" accept="image/*" capture="environment">
-<label class="btn" for="f-any">3c. 從「檔案」App 選（不限格式）</label>
+<label class="btn" for="f-any">從「檔案」App 選（HEIC / DNG 原檔）</label>
 <input id="f-any" type="file">
+<img id="pv" class="pv" alt="">
 <pre id="imp-last">（尚未匯入）</pre>
+<p class="hint">處理完成後，下面兩個按鈕會變可按。請<b>兩個都存到照片</b>，再到照片 App 並排比較：HDR 版的高光是否像原圖一樣「發亮」、SDR 版是否較暗平。兩張都套了同樣的暖色調和左上角字樣。</p>
+<div class="row"><button id="b-save-hdr" disabled>存 HDR 版</button><button id="b-save-sdr" disabled class="sec">存 SDR 版</button></div>
+<div class="row"><button class="ans" data-q="hdrSaved" data-a="HDR版會發亮，SDR版不會">HDR 版會發亮</button><button class="ans" data-q="hdrSaved" data-a="兩張一樣">兩張一樣</button></div>
+<div class="row"><button class="ans" data-q="hdrPreview" data-a="上方預覽圖有發亮">上方預覽有發亮</button><button class="ans" data-q="hdrPreview" data-a="上方預覽圖不發亮">預覽不發亮</button></div>
 
-<h2>4. 存回照片</h2>
-<button id="b-share">測試「分享 → 儲存影像」</button>
+<h2>4. 即時相機：手動控制與 12MP 流暢度</h2>
+<p class="hint">會開相機並自動試變焦、補光燈、曝光、對焦等控制（補光燈會閃一下）。</p>
+<video id="vid" playsinline muted autoplay></video>
+<button id="b-cam">開始測相機控制</button>
+
+<h2>5. 記憶體極限（最後做，可能當掉）</h2>
+<p class="hint">一直開 48MP 畫布直到失敗。頁面重載屬正常，結果會保留。</p>
+<button id="b-mem">開始測記憶體</button>
 
 <h2>結果</h2>
 <div class="row"><button id="b-copy">複製結果</button><button id="b-reset" class="sec">清除重來</button></div>
 <pre id="out"></pre>
 <div id="status">待命</div>
 
+<script src="jpeg.js"></script>
 <script>
 'use strict';
 const $ = s => document.querySelector(s);
-const KEY = 'aio-spike-v1', RUN = 'aio-spike-running';
+const standalone = !!(navigator.standalone || matchMedia('(display-mode: standalone)').matches);
+const KEY = 'aio-spike-v2', RUN = 'aio-spike-v2-running';
 let R = JSON.parse(localStorage.getItem(KEY) || 'null') || { crashes: [] };
 const crashed = localStorage.getItem(RUN);
 if (crashed) { R.crashes.push(crashed); localStorage.removeItem(RUN); }
-const save = () => { localStorage.setItem(KEY, JSON.stringify(R)); $('#out').textContent = JSON.stringify(R, null, 1); };
+$('#ctx').textContent = standalone ? '主畫面 App 模式' : '瀏覽器模式';
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(R)); } catch (e) {} $('#out').textContent = JSON.stringify(R, null, 1); };
 const status = t => { $('#status').textContent = t; };
 const step = async (name, fn) => { localStorage.setItem(RUN, name); status('執行中：' + name); try { return await fn(); } finally { localStorage.removeItem(RUN); } };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const now = () => performance.now();
 const mp = (w, h) => +(w * h / 1e6).toFixed(1);
 const errStr = e => (e && (e.name ? e.name + ': ' : '') + (e.message || e)) + '';
+const toBlob = (c, type, q) => new Promise(r => c.toBlob(r, type, q));
+const bytesOf = async b => new Uint8Array(await b.arrayBuffer());
+const mq = q => matchMedia(q).matches;
 
 // ---------- env ----------
-function env() {
-  const c = document.createElement('canvas'); const gl = c.getContext('webgl2');
-  const e = {
-    ua: navigator.userAgent, screen: [screen.width, screen.height, devicePixelRatio],
-    mem: navigator.deviceMemory || null, cores: navigator.hardwareConcurrency || null,
-    api: {
-      ImageCapture: 'ImageCapture' in window, OffscreenCanvas: 'OffscreenCanvas' in window,
-      VideoFrame: 'VideoFrame' in window, ImageDecoder: 'ImageDecoder' in window,
-      rVFC: 'requestVideoFrameCallback' in HTMLVideoElement.prototype,
-      MediaRecorder: 'MediaRecorder' in window, captureStream: 'captureStream' in HTMLCanvasElement.prototype,
-      share: !!navigator.share, canShare: !!navigator.canShare,
-    },
-    webgl2: !!gl,
-  };
+R.env = {
+  ua: navigator.userAgent, standalone, screen: [screen.width, screen.height, devicePixelRatio], cores: navigator.hardwareConcurrency,
+  media: { p3: mq('(color-gamut: p3)'), rec2020: mq('(color-gamut: rec2020)'), hdr: mq('(dynamic-range: high)'), videoHdr: mq('(video-dynamic-range: high)') },
+  css: { p3Color: CSS.supports('color', 'color(display-p3 1 0 0)'), dynRangeLimit: CSS.supports('dynamic-range-limit', 'no-limit') },
+  webgpu: !!navigator.gpu,
+};
+save();
+document.querySelectorAll('button.ans').forEach(b => b.onclick = () => { R.answers = R.answers || {}; R.answers[b.dataset.q] = b.dataset.a; save(); status('已記錄：' + b.dataset.a); });
+
+// ---------- 1. color ----------
+$('#b-color').onclick = () => step('color', async () => {
+  const C = R.color = {};
+  const p3c = document.createElement('canvas'); p3c.width = p3c.height = 64;
+  const p3 = p3c.getContext('2d', { colorSpace: 'display-p3' });
+  C.canvasP3 = p3.getContextAttributes ? p3.getContextAttributes().colorSpace : 'n/a';
+  const sc = document.createElement('canvas'); sc.width = sc.height = 64; const s = sc.getContext('2d');
+  for (const x of [p3, s]) { x.fillStyle = 'color(display-p3 0 1 0)'; x.fillRect(0, 0, 64, 64); }
+  const rd = (x) => { try { return [...x.getImageData(0, 0, 1, 1, { colorSpace: 'display-p3' }).data]; } catch (e) { return errStr(e); } };
+  C.p3GreenInP3Canvas = rd(p3); C.p3GreenInSrgbCanvas = rd(s);
+  const jb = await toBlob(p3c, 'image/jpeg', 0.95); const ju = await bytesOf(jb);
+  try { C.p3JpegICC = JPEGX.iccOf(ju, JPEGX.segments(ju).segs); } catch (e) { C.p3JpegICC = errStr(e); }
+  try { const bm = await createImageBitmap(jb); const c2 = document.createElement('canvas'); c2.width = c2.height = 64;
+    const x2 = c2.getContext('2d', { colorSpace: 'display-p3' }); x2.drawImage(bm, 0, 0); C.p3JpegRoundTrip = rd(x2); } catch (e) { C.p3JpegRoundTrip = errStr(e); }
+  const pb = await toBlob(p3c, 'image/png'); const pu = await bytesOf(pb); C.p3PngHasICCP = new TextDecoder('latin1').decode(pu.subarray(0, 200)).includes('iCCP');
+  C.encodeTypes = {};
+  for (const t of ['image/webp', 'image/avif', 'image/heic', 'image/jxl']) { const b = await toBlob(p3c, t, 0.9); C.encodeTypes[t] = b ? b.type : null; }
+  try { const f = p3c.getContext && document.createElement('canvas').getContext('2d', { colorType: 'float16' });
+    C.canvasFloat16 = f && f.getContextAttributes ? (f.getContextAttributes().colorType || 'unsupported') : 'n/a'; } catch (e) { C.canvasFloat16 = errStr(e); }
+  const gc = document.createElement('canvas'); const gl = gc.getContext('webgl2');
   if (gl) {
-    e.gl = { maxTex: gl.getParameter(gl.MAX_TEXTURE_SIZE), maxRB: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
-      maxViewport: [...gl.getParameter(gl.MAX_VIEWPORT_DIMS)], max3D: gl.getParameter(gl.MAX_3D_TEXTURE_SIZE),
-      floatRT: !!gl.getExtension('EXT_color_buffer_float'), halfFloatRT: !!gl.getExtension('EXT_color_buffer_half_float') };
-    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-    if (dbg) e.gl.renderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
+    C.webglDrawingBufferColorSpace = 'drawingBufferColorSpace' in gl; C.webglUnpackColorSpace = 'unpackColorSpace' in gl;
+    try { gl.drawingBufferColorSpace = 'display-p3'; C.webglDBCS = gl.drawingBufferColorSpace; } catch (e) { C.webglDBCS = errStr(e); }
+    try { gl.unpackColorSpace = 'display-p3'; C.webglUCS = gl.unpackColorSpace; } catch (e) { C.webglUCS = errStr(e); }
+    C.webglDrawingBufferStorage = typeof gl.drawingBufferStorage === 'function';
+    C.webglToneMapping = typeof gl.drawingBufferToneMapping === 'function';
   }
-  if (window.MediaRecorder) e.recTypes = ['video/mp4;codecs=avc1', 'video/mp4;codecs=hvc1', 'video/webm;codecs=vp9', 'video/webm'].filter(t => MediaRecorder.isTypeSupported(t));
-  return e;
-}
-R.env = env(); save();
+  save(); status('色域測試完成');
+});
 
-// ---------- canvas limits ----------
-const SIZES = [[4032, 3024], [4096, 4096], [4100, 4100], [5712, 4284], [8064, 6048]];
-async function canvas2d(w, h) {
-  const t0 = now(); const c = document.createElement('canvas'); c.width = w; c.height = h;
-  const ctx = c.getContext('2d'); if (!ctx) return { w, h, mp: mp(w, h), ok: false, why: 'no ctx' };
-  ctx.fillStyle = '#f00'; ctx.fillRect(0, 0, w, h);
-  const px = ctx.getImageData(w - 1, h - 1, 1, 1).data;
-  const drawOk = px[0] === 255 && px[3] === 255;
-  let blob = null; const t1 = now();
-  try { blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92)); } catch (e) {}
-  const r = { w, h, mp: mp(w, h), ok: drawOk, blobKB: blob ? Math.round(blob.size / 1024) : null, drawMs: Math.round(t1 - t0), encMs: Math.round(now() - t1) };
-  c.width = c.height = 0; return r;
+// ---------- 2. GPU / 120Hz / HDR ----------
+async function rafRate(n = 180) {
+  const ts = []; await new Promise(res => { const f = t => { ts.push(t); ts.length < n ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); });
+  const d = ts.slice(1).map((t, i) => t - ts[i]).sort((a, b) => a - b);
+  return { medianMs: +d[d.length >> 1].toFixed(2), fps: +(1000 / d[d.length >> 1]).toFixed(1), p90Ms: +d[Math.floor(d.length * .9)].toFixed(2) };
 }
-function webglFbo(w, h) {
-  const c = document.createElement('canvas'); c.width = c.height = 4; const gl = c.getContext('webgl2');
-  if (!gl) return { w, h, ok: false, why: 'no webgl2' };
-  const t0 = now(); const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
-  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  const st = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-  gl.viewport(0, 0, w, h); gl.clearColor(1, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
-  const px = new Uint8Array(4); gl.readPixels(w - 1, h - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  const err = gl.getError();
-  const r = { w, h, mp: mp(w, h), ok: st === gl.FRAMEBUFFER_COMPLETE && px[0] === 255 && err === 0, fbComplete: st === gl.FRAMEBUFFER_COMPLETE, glErr: err, ms: Math.round(now() - t0) };
-  gl.deleteTexture(tex); gl.deleteFramebuffer(fb); gl.getExtension('WEBGL_lose_context')?.loseContext();
-  return r;
-}
-$('#b-limits').onclick = async () => {
-  R.canvas2d = []; R.webglFbo = []; save();
-  for (const [w, h] of SIZES) {
-    R.canvas2d.push(await step(`canvas2d ${w}x${h}`, () => canvas2d(w, h))); save(); await sleep(300);
-  }
-  for (const [w, h] of SIZES) {
-    R.webglFbo.push(await step(`webgl ${w}x${h}`, () => webglFbo(w, h))); save(); await sleep(300);
-  }
-  status('畫布極限完成');
-};
-
-// ---------- camera ----------
-const vid = $('#vid');
-const stopStream = s => s && s.getTracks().forEach(t => t.stop());
-async function openCam(video) {
-  const s = await navigator.mediaDevices.getUserMedia({ video, audio: false });
-  vid.srcObject = s; await vid.play().catch(() => {});
-  for (let i = 0; i < 50 && !vid.videoWidth; i++) await sleep(100);
-  return s;
-}
-function trackInfo(s) {
-  const t = s.getVideoTracks()[0]; const st = t.getSettings();
-  let caps = null; try { caps = t.getCapabilities ? t.getCapabilities() : null; } catch (e) {}
-  const pick = o => o && Object.fromEntries(Object.entries(o).filter(([k]) =>
-    ['width', 'height', 'frameRate', 'zoom', 'torch', 'focusMode', 'focusDistance', 'exposureMode', 'exposureCompensation', 'exposureTime', 'iso', 'whiteBalanceMode', 'colorTemperature', 'pointsOfInterest', 'facingMode', 'resizeMode'].includes(k)));
-  return { label: t.label, settings: pick(st), caps: pick(caps), video: [vid.videoWidth, vid.videoHeight] };
-}
-const LUTFS = `#version 300 es
-precision highp float; precision highp sampler3D;
-uniform sampler2D v; uniform sampler3D lut; uniform float t; in vec2 uv; out vec4 o;
-float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + t) * 43758.5453); }
-void main(){ vec3 c = texture(v, uv).rgb; c = texture(lut, c * (32.0/33.0) + 0.5/33.0).rgb;
-  float d = distance(uv, vec2(.5)); c *= 1.0 - .35 * d * d; c += (h(gl_FragCoord.xy) - .5) * .06; o = vec4(c, 1); }`;
-const VS = `#version 300 es
-in vec2 p; out vec2 uv; void main(){ uv = vec2(p.x * .5 + .5, .5 - p.y * .5); gl_Position = vec4(p, 0, 1); }`;
-function makeGL(c) {
-  const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
-  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
-    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
-  const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, LUTFS));
-  gl.linkProgram(pr); gl.useProgram(pr);
-  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
-  const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
-  // 33^3 "warm film" test LUT
-  const N = 33, d = new Uint8Array(N * N * N * 4); let i = 0;
-  for (let b2 = 0; b2 < N; b2++) for (let g = 0; g < N; g++) for (let r = 0; r < N; r++) {
-    const R0 = r / 32, G0 = g / 32, B0 = b2 / 32;
-    d[i++] = Math.min(255, (R0 * 1.05 + .02) * 255); d[i++] = G0 * 255; d[i++] = Math.max(0, (B0 * .9) * 255); d[i++] = 255; }
-  gl.activeTexture(gl.TEXTURE1); const lt = gl.createTexture(); gl.bindTexture(gl.TEXTURE_3D, lt);
-  gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, N, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
-  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-  for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
-  gl.activeTexture(gl.TEXTURE0); const vt = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, vt);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-  gl.uniform1i(gl.getUniformLocation(pr, 'v'), 0); gl.uniform1i(gl.getUniformLocation(pr, 'lut'), 1);
-  const ut = gl.getUniformLocation(pr, 't');
-  return { gl, draw(src, w, h) { gl.viewport(0, 0, w, h); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
-    gl.uniform1f(ut, Math.random()); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); } };
-}
-async function fpsTest(seconds = 4) {
-  const w = vid.videoWidth, h = vid.videoHeight;
-  const c = document.createElement('canvas'); c.width = w; c.height = h; c.className = 'pv'; vid.after(c);
-  const g = makeGL(c); let frames = 0, camFrames = 0, worst = 0, last = now(); const end = now() + seconds * 1000;
-  if (vid.requestVideoFrameCallback) { const cb = () => { camFrames++; if (now() < end) vid.requestVideoFrameCallback(cb); }; vid.requestVideoFrameCallback(cb); }
-  await new Promise(res => { const loop = () => { g.draw(vid, w, h); frames++; const t = now(); worst = Math.max(worst, t - last); last = t;
-    if (t < end) requestAnimationFrame(loop); else res(); }; requestAnimationFrame(loop); });
-  const t0 = now(); const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92)); const encMs = Math.round(now() - t0);
-  const px = new Uint8Array(4); g.gl.readPixels(w >> 1, h >> 1, 1, 1, g.gl.RGBA, g.gl.UNSIGNED_BYTE, px);
-  const r = { w, h, renderFps: +(frames / seconds).toFixed(1), cameraFps: camFrames ? +(camFrames / seconds).toFixed(1) : null,
-    worstFrameMs: Math.round(worst), snapshotKB: blob ? Math.round(blob.size / 1024) : null, snapshotEncMs: encMs, centerPx: [...px] };
-  setTimeout(() => c.remove(), 3000); return r;
-}
-$('#b-cam').onclick = async () => {
-  const C = R.camera = { tries: [] }; save(); let s;
-  const asks = [['4032x3024', 4032, 3024], ['4096x3072', 4096, 3072], ['3840x2160', 3840, 2160], ['1920x1080', 1920, 1080]];
-  for (const [n, w, h] of asks) {
-    try { s = await step('cam ' + n, () => openCam({ facingMode: { ideal: 'environment' }, width: { ideal: w }, height: { ideal: h } }));
-      C.tries.push({ ask: n, ...trackInfo(s) }); }
-    catch (e) { C.tries.push({ ask: n, err: errStr(e) }); }
-    save();
-    if (n === '4032x3024' && s) {
-      if (window.ImageCapture) {
-        try { const ic = new ImageCapture(s.getVideoTracks()[0]); const pc = await ic.getPhotoCapabilities().catch(e => errStr(e));
-          const blob = await ic.takePhoto(); const bm = await createImageBitmap(blob);
-          C.takePhoto = { w: bm.width, h: bm.height, mp: mp(bm.width, bm.height), kb: Math.round(blob.size / 1024), type: blob.type, photoCaps: pc }; }
-        catch (e) { C.takePhoto = { err: errStr(e) }; }
-      } else C.takePhoto = 'ImageCapture 不支援';
-      save();
-    }
-    stopStream(s); s = null; await sleep(300);
-  }
+const WGSL = `
+struct O { @builtin(position) p: vec4f, @location(0) uv: vec2f };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> O { var q = array<vec2f,3>(vec2f(-1,-1), vec2f(3,-1), vec2f(-1,3)); var o: O;
+  o.p = vec4f(q[i], 0, 1); o.uv = q[i] * .5 + .5; return o; }
+@fragment fn fs(i: O) -> @location(0) vec4f {
+  if (i.uv.x < .06 || i.uv.x > .94 || i.uv.y < .15 || i.uv.y > .85 || (i.uv.x > .47 && i.uv.x < .53)) { return vec4f(0,0,0,1); }
+  if (i.uv.x < .5) { return vec4f(1,1,1,1); } return vec4f(4,4,4,1); }`;
+$('#b-gpu').onclick = () => step('gpu', async () => {
+  const G = R.gpu = {};
+  G.raf = await rafRate(); save();
+  if (!navigator.gpu) { G.webgpu = 'unavailable'; save(); status('沒有 WebGPU'); return; }
   try {
-    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
-    C.devices = [];
-    for (const d of devs) {
-      try { s = await step('dev ' + d.label, () => openCam({ deviceId: { exact: d.deviceId }, width: { ideal: 4032 }, height: { ideal: 3024 } }));
-        const ti = trackInfo(s); C.devices.push({ label: d.label, video: ti.video, zoom: ti.caps?.zoom || null, torch: ti.caps?.torch ?? null, focus: ti.caps?.focusMode || null }); }
-      catch (e) { C.devices.push({ label: d.label, err: errStr(e) }); }
-      stopStream(s); s = null; save(); await sleep(300);
-    }
-  } catch (e) { C.devicesErr = errStr(e); }
-  for (const [n, w, h] of [['fps@4K', 3840, 2160], ['fps@1080p', 1920, 1080]]) {
-    try { s = await openCam({ facingMode: { ideal: 'environment' }, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30 } });
-      C[n] = await step(n, () => fpsTest(4)); }
-    catch (e) { C[n] = { err: errStr(e) }; }
-    stopStream(s); s = null; save(); await sleep(300);
-  }
-  vid.srcObject = null; status('相機測試完成');
-};
+    const ad = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
+    if (!ad) { G.webgpu = 'no adapter'; save(); return; }
+    const info = ad.info || {}; G.adapter = { vendor: info.vendor, arch: info.architecture, desc: info.description };
+    G.features = [...ad.features].sort();
+    const L = ad.limits; G.limits = Object.fromEntries(['maxTextureDimension2D', 'maxBufferSize', 'maxStorageBufferBindingSize', 'maxComputeWorkgroupStorageSize', 'maxComputeInvocationsPerWorkgroup'].map(k => [k, L[k]]));
+    G.preferredFormat = navigator.gpu.getPreferredCanvasFormat();
+    const dev = await ad.requestDevice({ requiredFeatures: ad.features.has('shader-f16') ? ['shader-f16'] : [] });
+    const cv = $('#hdr'); const ctx = cv.getContext('webgpu');
+    let cfg = { device: dev, format: 'rgba16float', colorSpace: 'display-p3', alphaMode: 'opaque', toneMapping: { mode: 'extended' } };
+    try { ctx.configure(cfg); } catch (e) { G.hdrConfigureErr = errStr(e); cfg = { device: dev, format: G.preferredFormat, alphaMode: 'opaque' }; ctx.configure(cfg); }
+    const got = ctx.getConfiguration ? ctx.getConfiguration() : null;
+    G.canvasConfig = got ? { format: got.format, colorSpace: got.colorSpace, toneMapping: got.toneMapping && got.toneMapping.mode } : 'getConfiguration n/a';
+    const mod = dev.createShaderModule({ code: WGSL });
+    const pipe = dev.createRenderPipeline({ layout: 'auto', vertex: { module: mod, entryPoint: 'vs' }, fragment: { module: mod, entryPoint: 'fs', targets: [{ format: cfg.format }] } });
+    const enc = dev.createCommandEncoder(); const pass = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: [0, 0, 0, 1] }] });
+    pass.setPipeline(pipe); pass.draw(3); pass.end(); dev.queue.submit([enc.finish()]);
+    // compute throughput: apply a per-pixel curve over a 48MP rgba8 buffer
+    const N = 8064 * 6048; const buf = dev.createBuffer({ size: N * 4, usage: GPUBufferUsage.STORAGE });
+    const cm = dev.createShaderModule({ code: `@group(0) @binding(0) var<storage, read_write> d: array<u32>;
+      @compute @workgroup_size(256) fn main(@builtin(global_invocation_id) g: vec3u) { let i = g.x + g.y * 65535u * 256u; if (i >= arrayLength(&d)) { return; }
+        var c = unpack4x8unorm(d[i]); c = vec4f(pow(c.rgb, vec3f(.9)) * vec3f(1.05, 1., .92), 1.); d[i] = pack4x8unorm(c); }` });
+    const cp = dev.createComputePipeline({ layout: 'auto', compute: { module: cm, entryPoint: 'main' } });
+    const bg = dev.createBindGroup({ layout: cp.getBindGroupLayout(0), entries: [{ binding: 0, resource: { buffer: buf } }] });
+    const groups = Math.ceil(N / 256); const gx = Math.min(groups, 65535), gy = Math.ceil(groups / 65535);
+    const run = async () => { const e = dev.createCommandEncoder(); const p = e.beginComputePass(); p.setPipeline(cp); p.setBindGroup(0, bg); p.dispatchWorkgroups(gx, gy); p.end(); dev.queue.submit([e.finish()]); await dev.queue.onSubmittedWorkDone(); };
+    await run(); const t0 = now(); for (let i = 0; i < 5; i++) await run(); G.compute48MPms = +((now() - t0) / 5).toFixed(1);
+    buf.destroy();
+  } catch (e) { G.webgpuErr = errStr(e); }
+  save(); status('GPU 測試完成，請回答上面 HDR 白色問題');
+});
 
-// ---------- import ----------
-function magic(u) {
-  const s = (a, b) => String.fromCharCode(...u.slice(a, b));
-  if (u[0] === 0xFF && u[1] === 0xD8) return 'jpeg';
-  if (u[0] === 0x89 && s(1, 4) === 'PNG') return 'png';
-  if (s(4, 8) === 'ftyp') return 'isobmff:' + s(8, 12);
-  if (s(0, 4) === 'II*\0' || s(0, 4) === 'MM\0*') return 'tiff/dng';
-  return 'unknown:' + [...u.slice(0, 8)].map(x => x.toString(16).padStart(2, '0')).join('');
-}
-function findTiff(u) {
-  for (let i = 0; i < u.length - 10; i++)
-    if (u[i] === 0x45 && u[i + 1] === 0x78 && u[i + 2] === 0x69 && u[i + 3] === 0x66 && u[i + 4] === 0 && u[i + 5] === 0) {
-      const a = u[i + 6], b = u[i + 7]; if ((a === 0x49 && b === 0x49) || (a === 0x4D && b === 0x4D)) return i + 6; }
-  if ((u[0] === 0x49 && u[1] === 0x49) || (u[0] === 0x4D && u[1] === 0x4D)) return 0;
-  return -1;
-}
+// ---------- 3. import ----------
 function parseExif(buf) {
-  const u = new Uint8Array(buf); const T = findTiff(u); if (T < 0) return null;
-  const v = new DataView(buf); const le = u[T] === 0x49;
-  const u16 = o => v.getUint16(o, le), u32 = o => v.getUint32(o, le);
+  const u = new Uint8Array(buf); let T = -1;
+  for (let i = 0; i < Math.min(u.length - 10, 1 << 20); i++)
+    if (u[i] === 0x45 && u[i + 1] === 0x78 && u[i + 2] === 0x69 && u[i + 3] === 0x66 && u[i + 4] === 0 && u[i + 5] === 0 && (u[i + 6] === 0x49 || u[i + 6] === 0x4D)) { T = i + 6; break; }
+  if (T < 0 && (u[0] === 0x49 || u[0] === 0x4D) && (u[1] === u[0])) T = 0;
+  if (T < 0) return null;
+  const v = new DataView(buf); const le = u[T] === 0x49; const u16 = o => v.getUint16(o, le), u32 = o => v.getUint32(o, le);
   const SZ = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8 };
   const ifd = off => { const out = {}; if (!off || T + off + 2 > u.length) return out; const n = u16(T + off);
-    for (let k = 0; k < n; k++) { const e = T + off + 2 + k * 12; if (e + 12 > u.length) break;
-      const tag = u16(e), type = u16(e + 2), cnt = u32(e + 4), size = (SZ[type] || 1) * cnt;
-      const vo = size <= 4 ? e + 8 : T + u32(e + 8); if (vo + size > u.length) continue;
-      let val;
-      if (type === 2) val = String.fromCharCode(...u.slice(vo, vo + cnt)).replace(/\0+$/, '');
+    for (let k = 0; k < n && k < 400; k++) { const e = T + off + 2 + k * 12; if (e + 12 > u.length) break;
+      const tag = u16(e), type = u16(e + 2), cnt = u32(e + 4), size = (SZ[type] || 1) * cnt; const vo = size <= 4 ? e + 8 : T + u32(e + 8); if (vo + size > u.length) continue;
+      let val; if (type === 2) val = String.fromCharCode(...u.slice(vo, vo + Math.min(cnt, 200))).replace(/\0+$/, '');
       else if (type === 3) val = cnt === 1 ? u16(vo) : Array.from({ length: Math.min(cnt, 8) }, (_, j) => u16(vo + j * 2));
       else if (type === 4) val = cnt === 1 ? u32(vo) : Array.from({ length: Math.min(cnt, 8) }, (_, j) => u32(vo + j * 4));
-      else if (type === 5 || type === 10) val = Array.from({ length: Math.min(cnt, 4) }, (_, j) => +(u32(vo + j * 8) / (u32(vo + j * 8 + 4) || 1)).toFixed(6));
-      else val = '<' + size + 'B>';
-      out[tag] = val; }
+      else if (type === 5 || type === 10) { const r = j => { const a = type === 10 ? v.getInt32(vo + j * 8, le) : u32(vo + j * 8), b = u32(vo + j * 8 + 4) || 1; return +(a / b).toFixed(6); }; val = cnt === 1 ? r(0) : Array.from({ length: Math.min(cnt, 4) }, (_, j) => r(j)); }
+      else val = '<' + size + 'B>'; out[tag] = val; }
     return out; };
   const i0 = ifd(u32(T + 4)); const ex = ifd(i0[0x8769]); const gp = ifd(i0[0x8825]);
   const dms = a => Array.isArray(a) ? +(a[0] + a[1] / 60 + (a[2] || 0) / 3600).toFixed(6) : null;
-  return { tiffAt: T, make: i0[0x10F], model: i0[0x110], software: i0[0x131], orientation: i0[0x112],
-    dateOrig: ex[0x9003], tzOrig: ex[0x9011], pixel: [ex[0xA002], ex[0xA003]], lens: ex[0xA434],
-    gps: gp[2] ? { lat: dms(gp[2]) * (gp[1] === 'S' ? -1 : 1), lon: dms(gp[4]) * (gp[3] === 'W' ? -1 : 1), alt: gp[6]?.[0] ?? null } : null,
-    gpsIfdPresent: !!i0[0x8825] };
+  return { make: i0[0x10F], model: i0[0x110], orientation: i0[0x112], dateOrig: ex[0x9003], tz: ex[0x9011],
+    fNumber: ex[0x829D], exposure: ex[0x829A], iso: ex[0x8827], focal: ex[0x920A], focal35: ex[0xA405], ev: ex[0x9204],
+    lens: ex[0xA434], pixel: [ex[0xA002], ex[0xA003]], gps: gp[2] ? [dms(gp[2]), dms(gp[4])] : null };
 }
-async function tileRead(bm, tile = 1024) {
-  const c = document.createElement('canvas'); c.width = c.height = tile; const ctx = c.getContext('2d', { willReadFrequently: true });
-  const t0 = now(); let n = 0, lastAlpha = -1;
-  for (let y = 0; y < bm.height; y += tile) for (let x = 0; x < bm.width; x += tile) {
-    const w = Math.min(tile, bm.width - x), h = Math.min(tile, bm.height - y);
-    ctx.clearRect(0, 0, tile, tile); ctx.drawImage(bm, x, y, w, h, 0, 0, w, h);
-    const d = ctx.getImageData(0, 0, w, h).data; lastAlpha = d[d.length - 1]; n++; }
-  c.width = c.height = 0; return { tiles: n, ms: Math.round(now() - t0), lastTileAlpha: lastAlpha, ok: lastAlpha === 255 };
+function embeddedJpegs(u, max = 12) {
+  const out = []; const lim = u.length - 4;
+  for (let i = 8; i < lim && out.length < max; i++) {
+    if (u[i] !== 0xFF || u[i + 1] !== 0xD8 || u[i + 2] !== 0xFF) continue;
+    try { const p = JPEGX.segments(u, i); const sof = p.segs.find(s => s.marker >= 0xC0 && s.marker <= 0xCF && s.marker !== 0xC4 && s.marker !== 0xC8 && s.marker !== 0xCC);
+      if (sof) { out.push({ at: i, sof: 'C' + (sof.marker - 0xC0), w: (u[sof.dataStart + 3] << 8) | u[sof.dataStart + 4], h: (u[sof.dataStart + 1] << 8) | u[sof.dataStart + 2], bits: u[sof.dataStart], kb: Math.round((p.end - i) / 1024) }); i = p.end - 1; } }
+    catch (e) {}
+  }
+  return out;
 }
-async function fullCanvas(bm) {
-  const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; const ctx = c.getContext('2d');
-  if (!ctx) return { ok: false, why: 'no ctx' };
-  const t0 = now(); ctx.drawImage(bm, 0, 0); const px = ctx.getImageData(bm.width - 1, bm.height - 1, 1, 1).data;
-  const t1 = now(); const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
-  const r = { ok: px[3] === 255, drawMs: Math.round(t1 - t0), encMs: Math.round(now() - t1), outKB: blob ? Math.round(blob.size / 1024) : null };
-  c.width = c.height = 0; return r;
+// Measure real decoded precision: upload a center crop as RGBA16F and see whether values sit on the 1/255 grid.
+async function precision(src, W, H) {
+  const s = 256; const crop = await createImageBitmap(src, Math.max(0, (W >> 1) - s / 2), Math.max(0, (H >> 1) - s / 2), s, s, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const c = document.createElement('canvas'); const gl = c.getContext('webgl2'); if (!gl) return 'no webgl2';
+  if (!gl.getExtension('EXT_color_buffer_float')) return 'no float RT';
+  try { gl.unpackColorSpace = 'display-p3'; } catch (e) {}
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, gl.RGBA, gl.FLOAT, crop);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return 'fbo incomplete';
+  const px = new Float32Array(s * s * 4); gl.readPixels(0, 0, s, s, gl.RGBA, gl.FLOAT, px);
+  let off = 0, n = 0, over1 = 0; const uniq = new Set();
+  for (let i = 0; i < px.length; i += 4) for (let ch = 0; ch < 3; ch++) { const v = px[i + ch]; n++; if (v > 1.0001) over1++; const k = v * 255; if (Math.abs(k - Math.round(k)) > 0.02) off++; if (ch === 1) uniq.add(Math.round(v * 65535)); }
+  gl.getExtension('WEBGL_lose_context')?.loseContext(); crop.close?.();
+  return { offGridPct: +(100 * off / n).toFixed(2), uniqueGreen: uniq.size, over1Pct: +(100 * over1 / n).toFixed(2), verdict: off / n > 0.05 ? '>8-bit' : '8-bit' };
 }
-function glUpload(bm) {
-  const c = document.createElement('canvas'); c.width = c.height = 4; const gl = c.getContext('webgl2'); if (!gl) return { ok: false };
-  const max = gl.getParameter(gl.MAX_TEXTURE_SIZE); if (bm.width > max || bm.height > max) return { ok: false, why: 'exceeds maxTex ' + max };
-  const t0 = now(); const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
-  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
-  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-  const px = new Uint8Array(4); gl.readPixels(bm.width - 1, bm.height - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  const r = { ok: px[3] === 255 && gl.getError() === 0, ms: Math.round(now() - t0), px: [...px] };
-  gl.getExtension('WEBGL_lose_context')?.loseContext(); return r;
+function orientDraw(ctx, img, o, w, h) {
+  // w,h = upright output size; draws an un-oriented source to match EXIF orientation o
+  const T = { 1: [1, 0, 0, 1, 0, 0], 2: [-1, 0, 0, 1, w, 0], 3: [-1, 0, 0, -1, w, h], 4: [1, 0, 0, -1, 0, h], 5: [0, 1, 1, 0, 0, 0], 6: [0, 1, -1, 0, w, 0], 7: [0, -1, -1, 0, w, h], 8: [0, -1, 1, 0, 0, h] }[o] || [1, 0, 0, 1, 0, 0];
+  ctx.setTransform(...T); ctx.drawImage(img, 0, 0); ctx.setTransform(1, 0, 0, 1, 0, 0);
 }
+let OUT = { hdr: null, sdr: null };
 async function analyze(file, src) {
-  const r = { src, name: file.name, type: file.type, kb: Math.round(file.size / 1024), lastModified: new Date(file.lastModified).toISOString() };
-  const buf = await file.arrayBuffer(); r.magic = magic(new Uint8Array(buf, 0, 16));
-  try { r.exif = parseExif(buf); } catch (e) { r.exif = { err: errStr(e) }; }
+  const r = { src, name: file.name, type: file.type, kb: Math.round(file.size / 1024) };
   R.imports = R.imports || []; R.imports.push(r); const idx = R.imports.length - 1;
   const upd = () => { R.imports[idx] = r; save(); $('#imp-last').textContent = JSON.stringify(r, null, 1); };
+  $('#b-save-hdr').disabled = $('#b-save-sdr').disabled = true; OUT = { hdr: null, sdr: null };
+  const pv = $('#pv'); if (pv.src) URL.revokeObjectURL(pv.src); pv.src = URL.createObjectURL(file);
+  const buf = await file.arrayBuffer(); const u = new Uint8Array(buf);
+  r.magic = u[0] === 0xFF && u[1] === 0xD8 ? 'jpeg' : String.fromCharCode(...u.slice(4, 12)).includes('ftyp') ? 'isobmff:' + String.fromCharCode(...u.slice(8, 12)) : (u[0] === 0x49 || u[0] === 0x4D) ? 'tiff/dng' : 'other';
+  try { r.exif = parseExif(buf); } catch (e) { r.exif = errStr(e); }
+  r.sniff = JPEGX.sniffGainMapBytes(u);
+  let A = null;
+  if (r.magic === 'jpeg') { try { A = JPEGX.analyze(u); r.jpeg = { app: A.app, icc: A.icc, primary: A.primarySOF, mpf: A.mpf, images: A.images.map(i => ({ size: i.size, dims: i.dims, gain: i.gainKinds })), primaryGainKinds: A.primaryGainKinds, gainMap: !!A.gainMap }; } catch (e) { r.jpeg = errStr(e); } }
+  if (r.magic === 'tiff/dng') r.embedded = await step('dng scan', async () => embeddedJpegs(u));
   upd();
   let bm;
-  try { const t0 = now(); bm = await step('decode ' + file.name, () => createImageBitmap(file)); r.decode = { w: bm.width, h: bm.height, mp: mp(bm.width, bm.height), ms: Math.round(now() - t0) }; }
-  catch (e) { r.decode = { err: errStr(e) }; }
+  try { const t0 = now(); bm = await step('decode', () => createImageBitmap(file)); r.decode = { w: bm.width, h: bm.height, mp: mp(bm.width, bm.height), ms: Math.round(now() - t0) }; }
+  catch (e) { r.decode = errStr(e); upd(); status('無法解碼'); return; }
   upd();
-  if (!bm) {
-    try { const img = new Image(); img.src = URL.createObjectURL(file); await img.decode(); r.imgDecode = [img.naturalWidth, img.naturalHeight]; }
-    catch (e) { r.imgDecode = { err: errStr(e) }; }
-    upd(); status('匯入分析完成（無法解碼）'); return;
-  }
-  try { r.tileRead = await step('tile ' + file.name, () => tileRead(bm)); } catch (e) { r.tileRead = { err: errStr(e) }; } upd();
-  try { r.glUpload = await step('gl ' + file.name, () => glUpload(bm)); } catch (e) { r.glUpload = { err: errStr(e) }; } upd();
-  try { r.fullCanvas = await step('full ' + file.name, () => fullCanvas(bm)); } catch (e) { r.fullCanvas = { err: errStr(e) }; } upd();
-  try { const t0 = now(); const tw = Math.round(bm.width * Math.sqrt(16e6 / (bm.width * bm.height)));
-    const small = await createImageBitmap(file, { resizeWidth: Math.min(tw, bm.width), resizeQuality: 'high' });
-    r.resize16 = { w: small.width, h: small.height, ms: Math.round(now() - t0) }; small.close?.(); }
-  catch (e) { r.resize16 = { err: errStr(e) }; }
-  bm.close?.(); upd(); status('匯入分析完成：' + file.name);
+  try { r.precision = await step('precision', () => precision(file, bm.width, bm.height)); } catch (e) { r.precision = errStr(e); } upd();
+  // process: P3 canvas + warm look + label, encode JPEG
+  try {
+    await step('process', async () => {
+      const t0 = now(); const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height;
+      const x = c.getContext('2d', { colorSpace: 'display-p3' }); x.drawImage(bm, 0, 0);
+      x.globalCompositeOperation = 'soft-light'; x.fillStyle = 'rgba(255,160,80,0.45)'; x.fillRect(0, 0, c.width, c.height);
+      x.globalCompositeOperation = 'source-over'; x.fillStyle = '#fff'; x.font = `bold ${Math.round(c.width / 22)}px sans-serif`; x.fillText('AIO TEST', c.width / 30, c.width / 14);
+      const t1 = now(); const jb = await toBlob(c, 'image/jpeg', 0.92); const ju = await bytesOf(jb);
+      r.process = { drawMs: Math.round(t1 - t0), encMs: Math.round(now() - t1), outKB: Math.round(jb.size / 1024) };
+      try { r.process.icc = JPEGX.iccOf(ju, JPEGX.segments(ju).segs); } catch (e) {}
+      c.width = c.height = 0;
+      OUT.sdr = new File([jb], 'AIO_SDR.jpg', { type: 'image/jpeg' });
+      if (A && A.gainMap) {
+        const o = (r.exif && r.exif.orientation) || 1; let gmJpeg = null;
+        if (o !== 1) {
+          const gmb = await createImageBitmap(new Blob([u.subarray(A.gainMap.start, A.gainMap.end)], { type: 'image/jpeg' }), { imageOrientation: 'none', colorSpaceConversion: 'none' });
+          const sw = gmb.width, sh = gmb.height, rot = o >= 5; const gc = document.createElement('canvas'); gc.width = rot ? sh : sw; gc.height = rot ? sw : sh;
+          orientDraw(gc.getContext('2d'), gmb, o, gc.width, gc.height); gmJpeg = await bytesOf(await toBlob(gc, 'image/jpeg', 0.95));
+          r.process.gainMapRotated = { from: [sw, sh], to: [gc.width, gc.height], orientation: o };
+        }
+        const t2 = now(); const out = JPEGX.remux(u, ju, { orientation: 1, keepICCFrom: 'processed', gainMapJpeg: gmJpeg });
+        const chk = JPEGX.analyze(out);
+        r.process.remux = { ms: Math.round(now() - t2), kb: Math.round(out.length / 1024), gainMap: !!chk.gainMap, gmDims: chk.gainMap && chk.gainMap.dims, primary: chk.primarySOF, icc: chk.icc && chk.icc.desc, mpf: chk.mpf };
+        OUT.hdr = new File([out], 'AIO_HDR.jpg', { type: 'image/jpeg' });
+      } else r.process.remux = 'no JPEG gain map in source';
+    });
+  } catch (e) { r.process = Object.assign(r.process || {}, { err: errStr(e) }); }
+  bm.close?.(); upd();
+  $('#b-save-sdr').disabled = !OUT.sdr; $('#b-save-hdr').disabled = !OUT.hdr;
+  status(OUT.hdr ? '完成：請把 HDR 版和 SDR 版都存到照片比較' : '完成（這張沒有 JPEG 增益圖，只有 SDR 版）');
 }
-for (const [id, src] of [['#f-lib', 'library'], ['#f-cap', 'nativeCamera'], ['#f-any', 'files']])
-  $(id).onchange = e => { const f = e.target.files[0]; if (f) analyze(f, src).catch(err => { status('錯誤：' + errStr(err)); }); e.target.value = ''; };
+for (const [id, src] of [['#f-lib', 'library'], ['#f-any', 'files']])
+  $(id).onchange = e => { const f = e.target.files[0]; if (f) analyze(f, src).catch(err => status('錯誤：' + errStr(err))); e.target.value = ''; };
+async function shareFile(f, tag) {
+  R.saves = R.saves || {};
+  try { await navigator.share({ files: [f] }); R.saves[tag] = 'shared'; } catch (e) { R.saves[tag] = errStr(e); }
+  save();
+}
+$('#b-save-hdr').onclick = () => OUT.hdr && shareFile(OUT.hdr, 'hdr');
+$('#b-save-sdr').onclick = () => OUT.sdr && shareFile(OUT.sdr, 'sdr');
 
-// ---------- share ----------
-$('#b-share').onclick = async () => {
-  const c = document.createElement('canvas'); c.width = 1200; c.height = 900; const x = c.getContext('2d');
-  const g = x.createLinearGradient(0, 0, 1200, 900); g.addColorStop(0, '#e8a33d'); g.addColorStop(1, '#2b6cb0');
-  x.fillStyle = g; x.fillRect(0, 0, 1200, 900); x.fillStyle = '#fff'; x.font = 'bold 72px sans-serif'; x.fillText('AIO Cam 測試 ' + new Date().toLocaleString(), 60, 470);
-  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
-  const f = new File([blob], 'aio-test.jpg', { type: 'image/jpeg' });
-  R.share = { canShare: !!(navigator.canShare && navigator.canShare({ files: [f] })) };
-  try { await navigator.share({ files: [f] }); R.share.result = 'shared（請確認是否出現在照片 App）'; }
-  catch (e) { R.share.result = errStr(e); }
-  save(); status('分享測試完成');
+// ---------- 4. camera ----------
+const vid = $('#vid');
+const BASE = { facingMode: { ideal: 'environment' }, width: { ideal: 4032 }, height: { ideal: 3024 } };
+const VS = `#version 300 es
+in vec2 p; out vec2 uv; void main(){ uv = vec2(p.x*.5+.5, .5-p.y*.5); gl_Position = vec4(p,0,1); }`;
+const FS = `#version 300 es
+precision highp float; uniform sampler2D v; in vec2 uv; out vec4 o;
+void main(){ vec3 c = texture(v, uv).rgb; c = pow(c, vec3(.92)) * vec3(1.04, 1., .93); float d = distance(uv, vec2(.5)); o = vec4(c * (1. - .3*d*d), 1); }`;
+async function glFps(seconds = 4) {
+  const w = vid.videoWidth, h = vid.videoHeight; const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const gl = c.getContext('webgl2'); try { gl.drawingBufferColorSpace = 'display-p3'; gl.unpackColorSpace = 'display-p3'; } catch (e) {}
+  const sh = (t, s) => { const x = gl.createShader(t); gl.shaderSource(x, s); gl.compileShader(x); return x; };
+  const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, FS)); gl.linkProgram(pr); gl.useProgram(pr);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  let frames = 0, cam = 0, worst = 0, last = now(); const end = now() + seconds * 1000;
+  if (vid.requestVideoFrameCallback) { const cb = () => { cam++; if (now() < end) vid.requestVideoFrameCallback(cb); }; vid.requestVideoFrameCallback(cb); }
+  await new Promise(res => { const f = () => { gl.viewport(0, 0, w, h); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, vid); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); frames++;
+    const n = now(); worst = Math.max(worst, n - last); last = n; n < end ? requestAnimationFrame(f) : res(); }; requestAnimationFrame(f); });
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return { w, h, renderFps: +(frames / seconds).toFixed(1), cameraFps: +(cam / seconds).toFixed(1), worstMs: Math.round(worst) };
+}
+$('#b-cam').onclick = async () => {
+  const C = R['camera_' + (standalone ? 'pwa' : 'browser')] = { trials: [] }; save(); let s;
+  try { s = await step('open cam', () => navigator.mediaDevices.getUserMedia({ video: BASE, audio: false })); }
+  catch (e) { C.openErr = errStr(e); save(); status('開相機失敗'); return; }
+  vid.srcObject = s; await vid.play().catch(() => {}); for (let i = 0; i < 50 && !vid.videoWidth; i++) await sleep(100);
+  const t = s.getVideoTracks()[0];
+  C.label = t.label; C.video = [vid.videoWidth, vid.videoHeight];
+  try { C.caps = t.getCapabilities(); } catch (e) { C.caps = errStr(e); }
+  C.settings = t.getSettings(); C.supported = Object.keys(navigator.mediaDevices.getSupportedConstraints()).sort(); save();
+  const tries = [
+    ['zoom', 0.5], ['zoom', 2], ['zoom', 4], ['zoom', 8], ['zoom', 1],
+    ['torch', true], ['torch', false],
+    ['whiteBalanceMode', 'manual'], ['colorTemperature', 3200], ['colorTemperature', 6500], ['whiteBalanceMode', 'continuous'],
+    ['exposureMode', 'manual'], ['exposureCompensation', 1], ['exposureCompensation', 0], ['iso', 400], ['exposureTime', 100], ['exposureMode', 'continuous'],
+    ['pointsOfInterest', [{ x: 0.25, y: 0.25 }]], ['focusMode', 'single-shot'], ['focusMode', 'manual'], ['focusDistance', 0.3], ['focusMode', 'continuous'],
+  ];
+  for (const [k, v] of tries) {
+    const t0 = now(); const rec = { k, v };
+    try { await step('cam ' + k, () => t.applyConstraints({ ...BASE, [k]: k === 'pointsOfInterest' ? v : { exact: v } })); rec.ok = true; }
+    catch (e) { rec.ok = false; rec.err = errStr(e).slice(0, 80);
+      try { await t.applyConstraints({ ...BASE, advanced: [{ [k]: v }] }); rec.advanced = 'no throw'; } catch (e2) { rec.advanced = errStr(e2).slice(0, 60); } }
+    rec.ms = Math.round(now() - t0); await sleep(250);
+    const st = t.getSettings(); rec.after = st[k]; rec.video = [vid.videoWidth, vid.videoHeight];
+    C.trials.push(rec); save();
+  }
+  try { await t.applyConstraints({ ...BASE, zoom: { exact: 1 } }); } catch (e) {}
+  try { C.fps12MP = await step('fps 12MP', () => glFps(4)); } catch (e) { C.fps12MP = errStr(e); } save();
+  try { if (window.ImageCapture) { const ic = new ImageCapture(t); C.photoCaps = await ic.getPhotoCapabilities(); C.photoSettings = await ic.getPhotoSettings().catch(e => errStr(e));
+      const t0 = now(); const b = await ic.takePhoto(); const bm = await createImageBitmap(b); C.takePhoto = { w: bm.width, h: bm.height, kb: Math.round(b.size / 1024), ms: Math.round(now() - t0) }; } }
+  catch (e) { C.takePhotoErr = errStr(e); } save();
+  s.getTracks().forEach(x => x.stop());
+  try { const f = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 4896 }, height: { ideal: 3672 } } });
+    vid.srcObject = f; await vid.play().catch(() => {}); for (let i = 0; i < 30 && !vid.videoWidth; i++) await sleep(100);
+    C.front = { video: [vid.videoWidth, vid.videoHeight], caps: f.getVideoTracks()[0].getCapabilities?.() }; f.getTracks().forEach(x => x.stop()); }
+  catch (e) { C.front = errStr(e); }
+  vid.srcObject = null; save(); status('相機控制測試完成');
+};
+
+// ---------- 5. memory ----------
+$('#b-mem').onclick = async () => {
+  const M = R.memory = { canvas48: [], gl48f16: [] }; save(); const keep = [];
+  for (let i = 1; i <= 14; i++) {
+    const ok = await step('mem canvas #' + i, async () => { const c = document.createElement('canvas'); c.width = 8064; c.height = 6048;
+      const x = c.getContext('2d', { colorSpace: 'display-p3', willReadFrequently: false }); if (!x) return false;
+      x.fillStyle = `hsl(${i * 30} 80% 50%)`; x.fillRect(0, 0, c.width, c.height); const p = x.getImageData(c.width - 1, c.height - 1, 1, 1).data; keep.push(c); return p[3] === 255; });
+    M.canvas48.push(ok); save(); if (!ok) break; await sleep(150);
+  }
+  M.canvas48Max = M.canvas48.filter(Boolean).length; keep.forEach(c => c.width = c.height = 0); keep.length = 0; save(); await sleep(800);
+  const gc = document.createElement('canvas'); const gl = gc.getContext('webgl2'); gl.getExtension('EXT_color_buffer_float'); const texs = [];
+  for (let i = 1; i <= 10; i++) {
+    const ok = await step('mem gl rgba16f #' + i, async () => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA16F, 8064, 6048);
+      const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+      gl.viewport(0, 0, 8064, 6048); gl.clearColor(1, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); const px = new Float32Array(4); gl.readPixels(8063, 6047, 1, 1, gl.RGBA, gl.FLOAT, px);
+      texs.push(t); const err = gl.getError(); return !gl.isContextLost() && err === 0 && px[0] === 1; });
+    M.gl48f16.push(ok); save(); if (!ok) break; await sleep(150);
+  }
+  M.gl48f16Max = M.gl48f16.filter(Boolean).length; gl.getExtension('WEBGL_lose_context')?.loseContext(); save(); status('記憶體測試完成');
 };
 
 // ---------- out ----------
@@ -354,7 +390,7 @@ $('#b-copy').onclick = async () => {
   try { await navigator.clipboard.writeText(t); status('已複製 ' + t.length + ' 字元，貼回對話即可'); }
   catch (e) { const ta = document.createElement('textarea'); ta.value = t; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); status('已複製（備援）'); }
 };
-$('#b-reset').onclick = () => { localStorage.removeItem(KEY); R = { crashes: [], env: env() }; save(); $('#imp-last').textContent = '（尚未匯入）'; status('已清除'); };
+$('#b-reset').onclick = () => { localStorage.removeItem(KEY); location.reload(); };
 save();
 if (crashed) status('⚠️ 上次在「' + crashed + '」當掉，已記錄');
 </script>

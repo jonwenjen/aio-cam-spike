@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>AIO Cam 實測（拋棄式）</title>
+<style>
+  :root { color-scheme: light dark; --a:#2b6cb0; }
+  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; margin: 0; padding: 16px 16px 120px; max-width: 720px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 28px 0 8px; border-top: 1px solid #8884; padding-top: 16px; }
+  p.hint { margin: 4px 0 10px; opacity: .75; font-size: 14px; }
+  button, label.btn { display: block; width: 100%; box-sizing: border-box; min-height: 56px; margin: 8px 0;
+    font-size: 17px; font-weight: 600; border: 0; border-radius: 14px; background: var(--a); color: #fff;
+    text-align: center; padding: 14px; cursor: pointer; }
+  button.sec { background: #8883; color: inherit; }
+  button:disabled { opacity: .5; }
+  input[type=file] { display: none; }
+  .row { display: flex; gap: 8px; } .row > * { flex: 1; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: 12px; background: #8881; padding: 10px; border-radius: 10px; max-height: 320px; overflow: auto; }
+  #log { font-size: 13px; }
+  video, canvas.pv { width: 100%; max-height: 240px; object-fit: contain; background: #000; border-radius: 10px; }
+  .ok { color: #2f855a; } .bad { color: #c53030; }
+  #status { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: #222e; color: #fff; font-size: 14px; backdrop-filter: blur(8px); }
+</style>
+</head>
+<body>
+<h1>AIO Cam 網頁版實測</h1>
+<p class="hint">拋棄式測試頁，不上傳任何資料。依序按 1 → 4，最後按「複製結果」貼回對話。若頁面當掉重載，結果會保留並記下當掉的步驟。</p>
+
+<h2>1. 裝置與畫布極限</h2>
+<p class="hint">測 2D Canvas / WebGL 能處理多大的圖（12 / 16.7 / 24 / 48MP）。可能讓頁面重載，屬正常。</p>
+<button id="b-limits">開始測畫布極限</button>
+
+<h2>2. 網頁相機</h2>
+<p class="hint">會請求相機權限。測最高解析度、可用鏡頭、即時套色調的 FPS。</p>
+<video id="vid" playsinline muted autoplay></video>
+<button id="b-cam">開始測相機</button>
+
+<h2>3. 匯入照片（最重要）</h2>
+<p class="hint">請確認拍照時「相機」有定位權限。建議各測一次：一般照片、48MP 照片（若手機支援）、ProRAW（若支援）。</p>
+<label class="btn" for="f-lib">3a. 從「照片圖庫」選</label>
+<input id="f-lib" type="file" accept="image/*">
+<label class="btn" for="f-cap">3b. 用原生相機現拍</label>
+<input id="f-cap" type="file" accept="image/*" capture="environment">
+<label class="btn" for="f-any">3c. 從「檔案」App 選（不限格式）</label>
+<input id="f-any" type="file">
+<pre id="imp-last">（尚未匯入）</pre>
+
+<h2>4. 存回照片</h2>
+<button id="b-share">測試「分享 → 儲存影像」</button>
+
+<h2>結果</h2>
+<div class="row"><button id="b-copy">複製結果</button><button id="b-reset" class="sec">清除重來</button></div>
+<pre id="out"></pre>
+<div id="status">待命</div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const KEY = 'aio-spike-v1', RUN = 'aio-spike-running';
+let R = JSON.parse(localStorage.getItem(KEY) || 'null') || { crashes: [] };
+const crashed = localStorage.getItem(RUN);
+if (crashed) { R.crashes.push(crashed); localStorage.removeItem(RUN); }
+const save = () => { localStorage.setItem(KEY, JSON.stringify(R)); $('#out').textContent = JSON.stringify(R, null, 1); };
+const status = t => { $('#status').textContent = t; };
+const step = async (name, fn) => { localStorage.setItem(RUN, name); status('執行中：' + name); try { return await fn(); } finally { localStorage.removeItem(RUN); } };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const now = () => performance.now();
+const mp = (w, h) => +(w * h / 1e6).toFixed(1);
+const errStr = e => (e && (e.name ? e.name + ': ' : '') + (e.message || e)) + '';
+
+// ---------- env ----------
+function env() {
+  const c = document.createElement('canvas'); const gl = c.getContext('webgl2');
+  const e = {
+    ua: navigator.userAgent, screen: [screen.width, screen.height, devicePixelRatio],
+    mem: navigator.deviceMemory || null, cores: navigator.hardwareConcurrency || null,
+    api: {
+      ImageCapture: 'ImageCapture' in window, OffscreenCanvas: 'OffscreenCanvas' in window,
+      VideoFrame: 'VideoFrame' in window, ImageDecoder: 'ImageDecoder' in window,
+      rVFC: 'requestVideoFrameCallback' in HTMLVideoElement.prototype,
+      MediaRecorder: 'MediaRecorder' in window, captureStream: 'captureStream' in HTMLCanvasElement.prototype,
+      share: !!navigator.share, canShare: !!navigator.canShare,
+    },
+    webgl2: !!gl,
+  };
+  if (gl) {
+    e.gl = { maxTex: gl.getParameter(gl.MAX_TEXTURE_SIZE), maxRB: gl.getParameter(gl.MAX_RENDERBUFFER_SIZE),
+      maxViewport: [...gl.getParameter(gl.MAX_VIEWPORT_DIMS)], max3D: gl.getParameter(gl.MAX_3D_TEXTURE_SIZE),
+      floatRT: !!gl.getExtension('EXT_color_buffer_float'), halfFloatRT: !!gl.getExtension('EXT_color_buffer_half_float') };
+    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+    if (dbg) e.gl.renderer = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL);
+    gl.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+  if (window.MediaRecorder) e.recTypes = ['video/mp4;codecs=avc1', 'video/mp4;codecs=hvc1', 'video/webm;codecs=vp9', 'video/webm'].filter(t => MediaRecorder.isTypeSupported(t));
+  return e;
+}
+R.env = env(); save();
+
+// ---------- canvas limits ----------
+const SIZES = [[4032, 3024], [4096, 4096], [4100, 4100], [5712, 4284], [8064, 6048]];
+async function canvas2d(w, h) {
+  const t0 = now(); const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d'); if (!ctx) return { w, h, mp: mp(w, h), ok: false, why: 'no ctx' };
+  ctx.fillStyle = '#f00'; ctx.fillRect(0, 0, w, h);
+  const px = ctx.getImageData(w - 1, h - 1, 1, 1).data;
+  const drawOk = px[0] === 255 && px[3] === 255;
+  let blob = null; const t1 = now();
+  try { blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92)); } catch (e) {}
+  const r = { w, h, mp: mp(w, h), ok: drawOk, blobKB: blob ? Math.round(blob.size / 1024) : null, drawMs: Math.round(t1 - t0), encMs: Math.round(now() - t1) };
+  c.width = c.height = 0; return r;
+}
+function webglFbo(w, h) {
+  const c = document.createElement('canvas'); c.width = c.height = 4; const gl = c.getContext('webgl2');
+  if (!gl) return { w, h, ok: false, why: 'no webgl2' };
+  const t0 = now(); const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const st = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+  gl.viewport(0, 0, w, h); gl.clearColor(1, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  const px = new Uint8Array(4); gl.readPixels(w - 1, h - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const err = gl.getError();
+  const r = { w, h, mp: mp(w, h), ok: st === gl.FRAMEBUFFER_COMPLETE && px[0] === 255 && err === 0, fbComplete: st === gl.FRAMEBUFFER_COMPLETE, glErr: err, ms: Math.round(now() - t0) };
+  gl.deleteTexture(tex); gl.deleteFramebuffer(fb); gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return r;
+}
+$('#b-limits').onclick = async () => {
+  R.canvas2d = []; R.webglFbo = []; save();
+  for (const [w, h] of SIZES) {
+    R.canvas2d.push(await step(`canvas2d ${w}x${h}`, () => canvas2d(w, h))); save(); await sleep(300);
+  }
+  for (const [w, h] of SIZES) {
+    R.webglFbo.push(await step(`webgl ${w}x${h}`, () => webglFbo(w, h))); save(); await sleep(300);
+  }
+  status('畫布極限完成');
+};
+
+// ---------- camera ----------
+const vid = $('#vid');
+const stopStream = s => s && s.getTracks().forEach(t => t.stop());
+async function openCam(video) {
+  const s = await navigator.mediaDevices.getUserMedia({ video, audio: false });
+  vid.srcObject = s; await vid.play().catch(() => {});
+  for (let i = 0; i < 50 && !vid.videoWidth; i++) await sleep(100);
+  return s;
+}
+function trackInfo(s) {
+  const t = s.getVideoTracks()[0]; const st = t.getSettings();
+  let caps = null; try { caps = t.getCapabilities ? t.getCapabilities() : null; } catch (e) {}
+  const pick = o => o && Object.fromEntries(Object.entries(o).filter(([k]) =>
+    ['width', 'height', 'frameRate', 'zoom', 'torch', 'focusMode', 'focusDistance', 'exposureMode', 'exposureCompensation', 'exposureTime', 'iso', 'whiteBalanceMode', 'colorTemperature', 'pointsOfInterest', 'facingMode', 'resizeMode'].includes(k)));
+  return { label: t.label, settings: pick(st), caps: pick(caps), video: [vid.videoWidth, vid.videoHeight] };
+}
+const LUTFS = `#version 300 es
+precision highp float; precision highp sampler3D;
+uniform sampler2D v; uniform sampler3D lut; uniform float t; in vec2 uv; out vec4 o;
+float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898,78.233)) + t) * 43758.5453); }
+void main(){ vec3 c = texture(v, uv).rgb; c = texture(lut, c * (32.0/33.0) + 0.5/33.0).rgb;
+  float d = distance(uv, vec2(.5)); c *= 1.0 - .35 * d * d; c += (h(gl_FragCoord.xy) - .5) * .06; o = vec4(c, 1); }`;
+const VS = `#version 300 es
+in vec2 p; out vec2 uv; void main(){ uv = vec2(p.x * .5 + .5, .5 - p.y * .5); gl_Position = vec4(p, 0, 1); }`;
+function makeGL(c) {
+  const gl = c.getContext('webgl2', { preserveDrawingBuffer: true });
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  const pr = gl.createProgram(); gl.attachShader(pr, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(pr, sh(gl.FRAGMENT_SHADER, LUTFS));
+  gl.linkProgram(pr); gl.useProgram(pr);
+  const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(pr, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  // 33^3 "warm film" test LUT
+  const N = 33, d = new Uint8Array(N * N * N * 4); let i = 0;
+  for (let b2 = 0; b2 < N; b2++) for (let g = 0; g < N; g++) for (let r = 0; r < N; r++) {
+    const R0 = r / 32, G0 = g / 32, B0 = b2 / 32;
+    d[i++] = Math.min(255, (R0 * 1.05 + .02) * 255); d[i++] = G0 * 255; d[i++] = Math.max(0, (B0 * .9) * 255); d[i++] = 255; }
+  gl.activeTexture(gl.TEXTURE1); const lt = gl.createTexture(); gl.bindTexture(gl.TEXTURE_3D, lt);
+  gl.texImage3D(gl.TEXTURE_3D, 0, gl.RGBA8, N, N, N, 0, gl.RGBA, gl.UNSIGNED_BYTE, d);
+  gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_3D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  for (const p of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T, gl.TEXTURE_WRAP_R]) gl.texParameteri(gl.TEXTURE_3D, p, gl.CLAMP_TO_EDGE);
+  gl.activeTexture(gl.TEXTURE0); const vt = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, vt);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.uniform1i(gl.getUniformLocation(pr, 'v'), 0); gl.uniform1i(gl.getUniformLocation(pr, 'lut'), 1);
+  const ut = gl.getUniformLocation(pr, 't');
+  return { gl, draw(src, w, h) { gl.viewport(0, 0, w, h); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src);
+    gl.uniform1f(ut, Math.random()); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4); } };
+}
+async function fpsTest(seconds = 4) {
+  const w = vid.videoWidth, h = vid.videoHeight;
+  const c = document.createElement('canvas'); c.width = w; c.height = h; c.className = 'pv'; vid.after(c);
+  const g = makeGL(c); let frames = 0, camFrames = 0, worst = 0, last = now(); const end = now() + seconds * 1000;
+  if (vid.requestVideoFrameCallback) { const cb = () => { camFrames++; if (now() < end) vid.requestVideoFrameCallback(cb); }; vid.requestVideoFrameCallback(cb); }
+  await new Promise(res => { const loop = () => { g.draw(vid, w, h); frames++; const t = now(); worst = Math.max(worst, t - last); last = t;
+    if (t < end) requestAnimationFrame(loop); else res(); }; requestAnimationFrame(loop); });
+  const t0 = now(); const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92)); const encMs = Math.round(now() - t0);
+  const px = new Uint8Array(4); g.gl.readPixels(w >> 1, h >> 1, 1, 1, g.gl.RGBA, g.gl.UNSIGNED_BYTE, px);
+  const r = { w, h, renderFps: +(frames / seconds).toFixed(1), cameraFps: camFrames ? +(camFrames / seconds).toFixed(1) : null,
+    worstFrameMs: Math.round(worst), snapshotKB: blob ? Math.round(blob.size / 1024) : null, snapshotEncMs: encMs, centerPx: [...px] };
+  setTimeout(() => c.remove(), 3000); return r;
+}
+$('#b-cam').onclick = async () => {
+  const C = R.camera = { tries: [] }; save(); let s;
+  const asks = [['4032x3024', 4032, 3024], ['4096x3072', 4096, 3072], ['3840x2160', 3840, 2160], ['1920x1080', 1920, 1080]];
+  for (const [n, w, h] of asks) {
+    try { s = await step('cam ' + n, () => openCam({ facingMode: { ideal: 'environment' }, width: { ideal: w }, height: { ideal: h } }));
+      C.tries.push({ ask: n, ...trackInfo(s) }); }
+    catch (e) { C.tries.push({ ask: n, err: errStr(e) }); }
+    save();
+    if (n === '4032x3024' && s) {
+      if (window.ImageCapture) {
+        try { const ic = new ImageCapture(s.getVideoTracks()[0]); const pc = await ic.getPhotoCapabilities().catch(e => errStr(e));
+          const blob = await ic.takePhoto(); const bm = await createImageBitmap(blob);
+          C.takePhoto = { w: bm.width, h: bm.height, mp: mp(bm.width, bm.height), kb: Math.round(blob.size / 1024), type: blob.type, photoCaps: pc }; }
+        catch (e) { C.takePhoto = { err: errStr(e) }; }
+      } else C.takePhoto = 'ImageCapture 不支援';
+      save();
+    }
+    stopStream(s); s = null; await sleep(300);
+  }
+  try {
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+    C.devices = [];
+    for (const d of devs) {
+      try { s = await step('dev ' + d.label, () => openCam({ deviceId: { exact: d.deviceId }, width: { ideal: 4032 }, height: { ideal: 3024 } }));
+        const ti = trackInfo(s); C.devices.push({ label: d.label, video: ti.video, zoom: ti.caps?.zoom || null, torch: ti.caps?.torch ?? null, focus: ti.caps?.focusMode || null }); }
+      catch (e) { C.devices.push({ label: d.label, err: errStr(e) }); }
+      stopStream(s); s = null; save(); await sleep(300);
+    }
+  } catch (e) { C.devicesErr = errStr(e); }
+  for (const [n, w, h] of [['fps@4K', 3840, 2160], ['fps@1080p', 1920, 1080]]) {
+    try { s = await openCam({ facingMode: { ideal: 'environment' }, width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: 30 } });
+      C[n] = await step(n, () => fpsTest(4)); }
+    catch (e) { C[n] = { err: errStr(e) }; }
+    stopStream(s); s = null; save(); await sleep(300);
+  }
+  vid.srcObject = null; status('相機測試完成');
+};
+
+// ---------- import ----------
+function magic(u) {
+  const s = (a, b) => String.fromCharCode(...u.slice(a, b));
+  if (u[0] === 0xFF && u[1] === 0xD8) return 'jpeg';
+  if (u[0] === 0x89 && s(1, 4) === 'PNG') return 'png';
+  if (s(4, 8) === 'ftyp') return 'isobmff:' + s(8, 12);
+  if (s(0, 4) === 'II*\0' || s(0, 4) === 'MM\0*') return 'tiff/dng';
+  return 'unknown:' + [...u.slice(0, 8)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function findTiff(u) {
+  for (let i = 0; i < u.length - 10; i++)
+    if (u[i] === 0x45 && u[i + 1] === 0x78 && u[i + 2] === 0x69 && u[i + 3] === 0x66 && u[i + 4] === 0 && u[i + 5] === 0) {
+      const a = u[i + 6], b = u[i + 7]; if ((a === 0x49 && b === 0x49) || (a === 0x4D && b === 0x4D)) return i + 6; }
+  if ((u[0] === 0x49 && u[1] === 0x49) || (u[0] === 0x4D && u[1] === 0x4D)) return 0;
+  return -1;
+}
+function parseExif(buf) {
+  const u = new Uint8Array(buf); const T = findTiff(u); if (T < 0) return null;
+  const v = new DataView(buf); const le = u[T] === 0x49;
+  const u16 = o => v.getUint16(o, le), u32 = o => v.getUint32(o, le);
+  const SZ = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 7: 1, 9: 4, 10: 8 };
+  const ifd = off => { const out = {}; if (!off || T + off + 2 > u.length) return out; const n = u16(T + off);
+    for (let k = 0; k < n; k++) { const e = T + off + 2 + k * 12; if (e + 12 > u.length) break;
+      const tag = u16(e), type = u16(e + 2), cnt = u32(e + 4), size = (SZ[type] || 1) * cnt;
+      const vo = size <= 4 ? e + 8 : T + u32(e + 8); if (vo + size > u.length) continue;
+      let val;
+      if (type === 2) val = String.fromCharCode(...u.slice(vo, vo + cnt)).replace(/\0+$/, '');
+      else if (type === 3) val = cnt === 1 ? u16(vo) : Array.from({ length: Math.min(cnt, 8) }, (_, j) => u16(vo + j * 2));
+      else if (type === 4) val = cnt === 1 ? u32(vo) : Array.from({ length: Math.min(cnt, 8) }, (_, j) => u32(vo + j * 4));
+      else if (type === 5 || type === 10) val = Array.from({ length: Math.min(cnt, 4) }, (_, j) => +(u32(vo + j * 8) / (u32(vo + j * 8 + 4) || 1)).toFixed(6));
+      else val = '<' + size + 'B>';
+      out[tag] = val; }
+    return out; };
+  const i0 = ifd(u32(T + 4)); const ex = ifd(i0[0x8769]); const gp = ifd(i0[0x8825]);
+  const dms = a => Array.isArray(a) ? +(a[0] + a[1] / 60 + (a[2] || 0) / 3600).toFixed(6) : null;
+  return { tiffAt: T, make: i0[0x10F], model: i0[0x110], software: i0[0x131], orientation: i0[0x112],
+    dateOrig: ex[0x9003], tzOrig: ex[0x9011], pixel: [ex[0xA002], ex[0xA003]], lens: ex[0xA434],
+    gps: gp[2] ? { lat: dms(gp[2]) * (gp[1] === 'S' ? -1 : 1), lon: dms(gp[4]) * (gp[3] === 'W' ? -1 : 1), alt: gp[6]?.[0] ?? null } : null,
+    gpsIfdPresent: !!i0[0x8825] };
+}
+async function tileRead(bm, tile = 1024) {
+  const c = document.createElement('canvas'); c.width = c.height = tile; const ctx = c.getContext('2d', { willReadFrequently: true });
+  const t0 = now(); let n = 0, lastAlpha = -1;
+  for (let y = 0; y < bm.height; y += tile) for (let x = 0; x < bm.width; x += tile) {
+    const w = Math.min(tile, bm.width - x), h = Math.min(tile, bm.height - y);
+    ctx.clearRect(0, 0, tile, tile); ctx.drawImage(bm, x, y, w, h, 0, 0, w, h);
+    const d = ctx.getImageData(0, 0, w, h).data; lastAlpha = d[d.length - 1]; n++; }
+  c.width = c.height = 0; return { tiles: n, ms: Math.round(now() - t0), lastTileAlpha: lastAlpha, ok: lastAlpha === 255 };
+}
+async function fullCanvas(bm) {
+  const c = document.createElement('canvas'); c.width = bm.width; c.height = bm.height; const ctx = c.getContext('2d');
+  if (!ctx) return { ok: false, why: 'no ctx' };
+  const t0 = now(); ctx.drawImage(bm, 0, 0); const px = ctx.getImageData(bm.width - 1, bm.height - 1, 1, 1).data;
+  const t1 = now(); const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  const r = { ok: px[3] === 255, drawMs: Math.round(t1 - t0), encMs: Math.round(now() - t1), outKB: blob ? Math.round(blob.size / 1024) : null };
+  c.width = c.height = 0; return r;
+}
+function glUpload(bm) {
+  const c = document.createElement('canvas'); c.width = c.height = 4; const gl = c.getContext('webgl2'); if (!gl) return { ok: false };
+  const max = gl.getParameter(gl.MAX_TEXTURE_SIZE); if (bm.width > max || bm.height > max) return { ok: false, why: 'exceeds maxTex ' + max };
+  const t0 = now(); const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, bm);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  const px = new Uint8Array(4); gl.readPixels(bm.width - 1, bm.height - 1, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const r = { ok: px[3] === 255 && gl.getError() === 0, ms: Math.round(now() - t0), px: [...px] };
+  gl.getExtension('WEBGL_lose_context')?.loseContext(); return r;
+}
+async function analyze(file, src) {
+  const r = { src, name: file.name, type: file.type, kb: Math.round(file.size / 1024), lastModified: new Date(file.lastModified).toISOString() };
+  const buf = await file.arrayBuffer(); r.magic = magic(new Uint8Array(buf, 0, 16));
+  try { r.exif = parseExif(buf); } catch (e) { r.exif = { err: errStr(e) }; }
+  R.imports = R.imports || []; R.imports.push(r); const idx = R.imports.length - 1;
+  const upd = () => { R.imports[idx] = r; save(); $('#imp-last').textContent = JSON.stringify(r, null, 1); };
+  upd();
+  let bm;
+  try { const t0 = now(); bm = await step('decode ' + file.name, () => createImageBitmap(file)); r.decode = { w: bm.width, h: bm.height, mp: mp(bm.width, bm.height), ms: Math.round(now() - t0) }; }
+  catch (e) { r.decode = { err: errStr(e) }; }
+  upd();
+  if (!bm) {
+    try { const img = new Image(); img.src = URL.createObjectURL(file); await img.decode(); r.imgDecode = [img.naturalWidth, img.naturalHeight]; }
+    catch (e) { r.imgDecode = { err: errStr(e) }; }
+    upd(); status('匯入分析完成（無法解碼）'); return;
+  }
+  try { r.tileRead = await step('tile ' + file.name, () => tileRead(bm)); } catch (e) { r.tileRead = { err: errStr(e) }; } upd();
+  try { r.glUpload = await step('gl ' + file.name, () => glUpload(bm)); } catch (e) { r.glUpload = { err: errStr(e) }; } upd();
+  try { r.fullCanvas = await step('full ' + file.name, () => fullCanvas(bm)); } catch (e) { r.fullCanvas = { err: errStr(e) }; } upd();
+  try { const t0 = now(); const tw = Math.round(bm.width * Math.sqrt(16e6 / (bm.width * bm.height)));
+    const small = await createImageBitmap(file, { resizeWidth: Math.min(tw, bm.width), resizeQuality: 'high' });
+    r.resize16 = { w: small.width, h: small.height, ms: Math.round(now() - t0) }; small.close?.(); }
+  catch (e) { r.resize16 = { err: errStr(e) }; }
+  bm.close?.(); upd(); status('匯入分析完成：' + file.name);
+}
+for (const [id, src] of [['#f-lib', 'library'], ['#f-cap', 'nativeCamera'], ['#f-any', 'files']])
+  $(id).onchange = e => { const f = e.target.files[0]; if (f) analyze(f, src).catch(err => { status('錯誤：' + errStr(err)); }); e.target.value = ''; };
+
+// ---------- share ----------
+$('#b-share').onclick = async () => {
+  const c = document.createElement('canvas'); c.width = 1200; c.height = 900; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 1200, 900); g.addColorStop(0, '#e8a33d'); g.addColorStop(1, '#2b6cb0');
+  x.fillStyle = g; x.fillRect(0, 0, 1200, 900); x.fillStyle = '#fff'; x.font = 'bold 72px sans-serif'; x.fillText('AIO Cam 測試 ' + new Date().toLocaleString(), 60, 470);
+  const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.9));
+  const f = new File([blob], 'aio-test.jpg', { type: 'image/jpeg' });
+  R.share = { canShare: !!(navigator.canShare && navigator.canShare({ files: [f] })) };
+  try { await navigator.share({ files: [f] }); R.share.result = 'shared（請確認是否出現在照片 App）'; }
+  catch (e) { R.share.result = errStr(e); }
+  save(); status('分享測試完成');
+};
+
+// ---------- out ----------
+$('#b-copy').onclick = async () => {
+  const t = JSON.stringify(R);
+  try { await navigator.clipboard.writeText(t); status('已複製 ' + t.length + ' 字元，貼回對話即可'); }
+  catch (e) { const ta = document.createElement('textarea'); ta.value = t; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); status('已複製（備援）'); }
+};
+$('#b-reset').onclick = () => { localStorage.removeItem(KEY); R = { crashes: [], env: env() }; save(); $('#imp-last').textContent = '（尚未匯入）'; status('已清除'); };
+save();
+if (crashed) status('⚠️ 上次在「' + crashed + '」當掉，已記錄');
+</script>
+</body>
+</html>
